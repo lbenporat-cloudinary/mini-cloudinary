@@ -1,1 +1,1 @@
-web: bundle exec rackup -p 5693
+web: bundle exec rackup -p ${PORT:-8080}
