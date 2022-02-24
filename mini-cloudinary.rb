@@ -38,7 +38,14 @@ class MiniCloudinary
     def resize_image(path, output_path, width, height)
         
         image = MiniMagick::Image.open(path)
-        if (width > image.width || height > image.height)
+        if width > image.width && height > image.height
+            image.combine_options do |c|
+                c.extent("#{width}x#{height}")
+                c.background("black")
+                c.gravity("center")
+            end
+        elsif width > image.width || height > image.height
+            image = image.resize("#{width}x#{height}")
             image.combine_options do |c|
                 c.extent("#{width}x#{height}")
                 c.background("black")
