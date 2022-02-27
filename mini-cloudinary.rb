@@ -24,10 +24,6 @@ end
 
 class MiniCloudinary
 
-    def initialize(path)
-        @local_path = path
-    end
-
     def resize_with_black_background(image, width, height)
         image.combine_options do |c|
             c.extent("#{width}x#{height}")
@@ -48,7 +44,6 @@ class MiniCloudinary
                 image = image.resize("#{width}x#{height}")
             end
             image.write("#{output_path}")
-            output_path
         rescue MiniMagick::Invalid => e
             raise IOError.new("URL not found or not an image")
         rescue OpenURI::HTTPError => e
@@ -60,13 +55,14 @@ class MiniCloudinary
         end
     end
 
-    def handle_request(url, width, height)
+    def handle_request(url, local_path, width, height)
         if url.nil? || width.nil? || height.nil?
             raise ArgumentError.new("Arguments cannot be nil, got: url=#{url}, width=#{width}, height=#{height}")
         elsif width.to_i <= 0 || height.to_i <= 0
             raise ArgumentError.new("Width and height must be positive integers, got: width=#{width}, height=#{height}")
         else
-            resize_image(url, @local_path, width.to_i, height.to_i)
+            resize_image(url, local_path, width.to_i, height.to_i)
+            local_path
         end
     end
 end
@@ -75,8 +71,7 @@ class App < Sinatra::Base
 
     include ErrorHandler
 
-    file_path = "output.jpeg"
-    mc = MiniCloudinary.new(file_path)
+    mc = MiniCloudinary.new
 
     error STATUS_NOT_FOUND do
         parse_error_to_json(STATUS_NOT_FOUND, "Sorry, this page doesn't exist")
@@ -88,8 +83,11 @@ class App < Sinatra::Base
         width = params['width']
         height = params['height']
 
+        normalized_url = url.strip.gsub(/[^0-9A-Za-z.\-]/, '_')
+        local_path = "#{File.basename(normalized_url)}_width=#{width}_height=#{height}.jpeg"
+
         begin
-            send_file(mc.handle_request(url, width, height))
+            send_file(mc.handle_request(url, local_path, width, height))
         rescue IOError => e
             build_error_array(BAD_REQUEST, e.message)
         rescue ArgumentError => e
