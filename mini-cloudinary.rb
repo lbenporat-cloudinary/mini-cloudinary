@@ -16,11 +16,13 @@ module ErrorHandler
         }
         JSON[json]
     end
+
+    def build_error_array(code, message)
+        [code, parse_error_to_json(code, message)]
+    end
 end
 
 class MiniCloudinary
-
-    include ErrorHandler
 
     def initialize(path)
         @local_path = path
@@ -47,14 +49,23 @@ class MiniCloudinary
             end
             image.write("#{output_path}")
             output_path
-        rescue Exception => e
-            [BAD_REQUEST, parse_error_to_json(BAD_REQUEST, "url not found or not an image")]
+        rescue MiniMagick::Invalid => e
+            raise IOError.new("URL not found or not an image")
+        rescue OpenURI::HTTPError => e
+            raise IOError.new("URL not found or not an image")
+        rescue OpenSSL::SSL::SSLError => e
+            raise IOError.new("Failed to open ssl connection")
+        rescue SocketError => e
+            raise IOError.new("Could not open connection to #{path}")
         end
     end
 
     def handle_request(url, width, height)
-        if width.nil? || height.nil? || width.to_i <= 0 || height.to_i <= 0
-            [BAD_REQUEST, parse_error_to_json(BAD_REQUEST, "Invalid params")]
+        if url.nil? || width.nil? || height.nil?
+            raise ArgumentError.new("Arguments cannot be nil, got: url=#{url}, width=#{width}, height=#{height}")
+            #[BAD_REQUEST, parse_error_to_json(BAD_REQUEST, "Invalid params")]
+        elsif width.to_i <= 0 || height.to_i <= 0
+            raise ArgumentError.new("Width and height must be positive integers, got: width=#{width}, height=#{height}")
         else
             resize_image(url, @local_path, width.to_i, height.to_i)
         end
@@ -78,11 +89,12 @@ class App < Sinatra::Base
         width = params['width']
         height = params['height']
 
-        ret_value = mc.handle_request(url, width, height)
-        if ret_value.is_a?(String)
-            send_file(file_path) 
-        else
-            ret_value
+        begin
+            send_file(mc.handle_request(url, width, height))
+        rescue IOError => e
+            build_error_array(BAD_REQUEST, e.message)
+        rescue ArgumentError => e
+            build_error_array(BAD_REQUEST, e.message)
         end
     end 
 
