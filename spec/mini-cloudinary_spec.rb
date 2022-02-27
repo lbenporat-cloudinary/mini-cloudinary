@@ -77,6 +77,14 @@ RSpec.describe App do
             get "#{url}&width=#{width}&heigh=#{height}"
             expect(last_response.status).to eq 400
         end
+
+        it "validates invalid url returns 400" do
+            invalid_url = "https://my-invalid-image.png"
+            width = 500
+            height = 500
+            get "/thumbnail?url=#{invalid_url}&width=#{width}&height=#{height}"
+            expect(last_response.status).to eq 400
+        end
     end
 
     context "test padding" do
