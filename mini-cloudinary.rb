@@ -27,6 +27,9 @@ class MiniCloudinary
     end
 
     def image_doesnt_exist?(url)
+        if url.nil?
+            return false
+        end
         
         uri = URI.parse(url)
         request = Net::HTTP.new(uri.host, uri.port)
@@ -35,22 +38,21 @@ class MiniCloudinary
         response.code.to_i != STATUS_OK
     end
 
+    def resize_with_black_background(image, width, height)
+        image.combine_options do |c|
+            c.extent("#{width}x#{height}")
+            c.background("black")
+            c.gravity("center")
+        end
+    end
+
     def resize_image(path, output_path, width, height)
-        
         image = MiniMagick::Image.open(path)
         if width > image.width && height > image.height
-            image.combine_options do |c|
-                c.extent("#{width}x#{height}")
-                c.background("black")
-                c.gravity("center")
-            end
+            resize_with_black_background(image, width, height)
         elsif width > image.width || height > image.height
             image = image.resize("#{width}x#{height}")
-            image.combine_options do |c|
-                c.extent("#{width}x#{height}")
-                c.background("black")
-                c.gravity("center")
-            end
+            resize_with_black_background(image, width, height)
         else
             image = image.resize("#{width}x#{height}")
         end
@@ -58,8 +60,7 @@ class MiniCloudinary
     end
 
     def handle_request(url, width, height)
-    
-        if url.nil? || image_doesnt_exist?(url) # todo check that it is actually and image!
+        if image_doesnt_exist?(url) # todo check that it is actually and image!
             [BAD_REQUEST, parse_error_to_json(BAD_REQUEST, "url not found or not an image")]
         elsif width.nil? || height.nil? || width.to_i <= 0 || height.to_i <= 0
             [BAD_REQUEST, parse_error_to_json(BAD_REQUEST, "Invalid params")]
