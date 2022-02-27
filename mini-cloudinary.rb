@@ -63,7 +63,6 @@ class MiniCloudinary
     def handle_request(url, width, height)
         if url.nil? || width.nil? || height.nil?
             raise ArgumentError.new("Arguments cannot be nil, got: url=#{url}, width=#{width}, height=#{height}")
-            #[BAD_REQUEST, parse_error_to_json(BAD_REQUEST, "Invalid params")]
         elsif width.to_i <= 0 || height.to_i <= 0
             raise ArgumentError.new("Width and height must be positive integers, got: width=#{width}, height=#{height}")
         else
