@@ -2,6 +2,34 @@ require "sinatra"
 require "mini_magick"
 require "net/http"
 require 'json'
+require 'aws-sdk-s3'
+
+class S3BucketService
+    def initialize(bucket_name, region)
+        @s3_client = Aws::S3::Client.new(region: "us-east-1")
+        @bucket_name = bucket_name
+        @s3_client.create_bucket(bucket: @bucket_name)
+    end
+    
+    def upload(object_key, object_content)
+        begin
+            response = @s3_client.put_object(
+            bucket: @bucket_name,
+            key: object_key,
+            body: object_content
+            )
+            
+            if response.etag
+                return true
+            else
+                return false
+            end
+        rescue StandardError => e
+            puts "Error uploading object: #{e.message}"
+            return false
+        end
+    end
+end
 
 module ErrorHandler
 
@@ -23,6 +51,10 @@ module ErrorHandler
 end
 
 class MiniCloudinary
+
+    #def initialize()
+    #    @s3_bucket_service = S3BucketService.new("mini-cloudinary", "us-east-1")
+    #end
 
     def resize_with_background(image:, width:, height:, extent_width: width, extent_height: height, background: "black")
         image.combine_options do |c|
@@ -46,6 +78,7 @@ class MiniCloudinary
                 image = image.resize("#{width}x#{height}")
             end
             image.write("#{output_path}")
+            @s3_bucket_service.upload(output_path, output_path)
         rescue MiniMagick::Invalid => e
             raise IOError.new("URL not found or not an image")
         rescue OpenURI::HTTPError => e
