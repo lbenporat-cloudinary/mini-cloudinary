@@ -24,9 +24,10 @@ end
 
 class MiniCloudinary
 
-    def resize_with_background(image:, width:, height:, background: "black")
+    def resize_with_background(image:, width:, height:, extent_width: width, extent_height: height, background: "black")
         image.combine_options do |c|
-            c.extent("#{width}x#{height}")
+            c.resize("#{width}x#{height}")
+            c.extent("#{extent_width}x#{extent_height}")
             c.background(background)
             c.gravity("center")
         end
@@ -35,8 +36,15 @@ class MiniCloudinary
     def resize_image(path, output_path, width, height)
         begin
             image = MiniMagick::Image.open(path)
-            image = image.resize("#{width}x#{height}")
-            resize_with_background(image: image, width: width, height: height)
+            if width > image.width && height > image.height
+                resize_with_background(image: image, width: image.width, height: image.height, extent_width: width, extent_height: height)
+            elsif width > image.width
+                resize_with_background(image: image, width: image.width, height: height, extent_width: width)
+            elsif height > image.height
+                resize_with_background(image: image, width: width, height: image.height, extent_height: height)
+            else
+                image = image.resize("#{width}x#{height}")
+            end
             image.write("#{output_path}")
         rescue MiniMagick::Invalid => e
             raise IOError.new("URL not found or not an image")
