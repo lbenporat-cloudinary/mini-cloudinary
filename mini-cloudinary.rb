@@ -29,6 +29,10 @@ class S3BucketService
             return false
         end
     end
+
+    def file_exists?(filename)
+        bucket = @s3_client.bucket
+    end
 end
 
 module ErrorHandler
@@ -67,18 +71,22 @@ class MiniCloudinary
 
     def resize_image(path, output_path, width, height)
         begin
-            image = MiniMagick::Image.open(path)
-            if width > image.width && height > image.height
-                resize_with_background(image: image, width: image.width, height: image.height, extent_width: width, extent_height: height)
-            elsif width > image.width
-                resize_with_background(image: image, width: image.width, height: height, extent_width: width)
-            elsif height > image.height
-                resize_with_background(image: image, width: width, height: image.height, extent_height: height)
+            if s3_bucket_service.file_exists?()
+                #return the file from s3
             else
-                image = image.resize("#{width}x#{height}")
+                image = MiniMagick::Image.open(path)
+                if width > image.width && height > image.height
+                    resize_with_background(image: image, width: image.width, height: image.height, extent_width: width, extent_height: height)
+                elsif width > image.width
+                    resize_with_background(image: image, width: image.width, height: height, extent_width: width)
+                elsif height > image.height
+                    resize_with_background(image: image, width: width, height: image.height, extent_height: height)
+                else
+                    image = image.resize("#{width}x#{height}")
+                end
+                image.write("#{output_path}")
+                @s3_bucket_service.upload(output_path, output_path)
             end
-            image.write("#{output_path}")
-            @s3_bucket_service.upload(output_path, output_path)
         rescue MiniMagick::Invalid => e
             raise IOError.new("URL not found or not an image")
         rescue OpenURI::HTTPError => e
