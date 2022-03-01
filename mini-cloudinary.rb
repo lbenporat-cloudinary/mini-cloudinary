@@ -13,10 +13,6 @@ class StorageService
         @bucket_name = bucket_name
         response = @s3_client.list_buckets
         @s3_client.create_bucket(bucket: @bucket_name) unless response.include?(@bucket_name)
-        @s3_client.put_bucket_acl(
-            bucket: @bucket_name,
-            acl: 'public-read'
-          )
     end
 
     def get_file(filename)
@@ -28,12 +24,14 @@ class StorageService
         end
     end
 
-
-    def upload(filename)
+    def upload(image, filename)
+        image.write("#{filename}")
+        @latest_files << filename
+        evict_old_files
         response = @s3_client.put_object(
             bucket: @bucket_name,
             key: filename,
-            body: IO.read(filename)
+            body: image.to_blob
         )
         if response.etag
             return true
@@ -47,7 +45,7 @@ class StorageService
     def evict_old_files
         while @latest_files.size >= MAX_LOCAL_FILES
             removed_file = @latest_files.shift()
-            upload(removed_file)
+            upload(MiniMagick::Image.open(removed_file), removed_file)
             File.delete(removed_file)
         end
     end
@@ -105,9 +103,9 @@ class MiniCloudinary
         end
     end
 
-    def resize_image(path, output_path, width, height)
+    def resize_image(path, filename, width, height)
         begin
-            file = @storage_service.get_file(output_path)
+            file = @storage_service.get_file(filename)
             if file.nil?
                 image = MiniMagick::Image.open(path)
                 if width > image.width && height > image.height
@@ -119,9 +117,7 @@ class MiniCloudinary
                 else
                     image = image.resize("#{width}x#{height}")
                 end
-                # todo can skip writing to localpath?
-                image.write("#{output_path}")
-                @storage_service.upload( output_path)
+                @storage_service.upload(image, filename)
             end
         rescue MiniMagick::Invalid => e
             raise IOError.new("URL not found or not an image")
