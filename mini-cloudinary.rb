@@ -1,37 +1,73 @@
 require "sinatra"
 require "mini_magick"
 require "net/http"
-require 'json'
-require 'aws-sdk-s3'
+require "json"
+require "aws-sdk-s3"
 
-class S3BucketService
-    def initialize(bucket_name, region)
-        @s3_client = Aws::S3::Client.new(region: "us-east-1")
-        @bucket_name = bucket_name
-        @s3_client.create_bucket(bucket: @bucket_name)
-    end
+class StorageService
+    MAX_LOCAL_FILES = 3
     
-    def upload(object_key, object_content)
-        begin
-            response = @s3_client.put_object(
+    def initialize(bucket_name, region)
+        @latest_files = []
+        @s3_client = Aws::S3::Client.new(region: region)
+        @bucket_name = bucket_name
+        response = @s3_client.list_buckets
+        @s3_client.create_bucket(bucket: @bucket_name) unless response.include?(@bucket_name)
+        @s3_client.put_bucket_acl(
             bucket: @bucket_name,
-            key: object_key,
-            body: object_content
-            )
-            
-            if response.etag
-                return true
-            else
-                return false
-            end
-        rescue StandardError => e
-            puts "Error uploading object: #{e.message}"
+            acl: 'public-read'
+          )
+    end
+
+    def get_file(filename)
+        evict_old_files
+        if File.file?(filename) || get_from_s3(filename)
+            filename
+        else
+            nil
+        end
+    end
+
+
+    def upload(filename)
+        response = @s3_client.put_object(
+            bucket: @bucket_name,
+            key: filename,
+            body: IO.read(filename)
+        )
+        if response.etag
+            return true
+        else
             return false
         end
     end
 
-    def file_exists?(filename)
-        bucket = @s3_client.bucket
+    private
+
+    def evict_old_files
+        while @latest_files.size >= MAX_LOCAL_FILES
+            removed_file = @latest_files.shift()
+            upload(removed_file)
+            File.delete(removed_file)
+        end
+    end
+
+    def get_from_s3(filename)
+        begin
+            response = @s3_client.get_object(
+                response_target: filename,
+                bucket: @bucket_name,
+                key: filename
+            )
+            if response.etag
+                @latest_files << filename
+                true
+            else
+                false
+            end
+        rescue Aws::S3::Errors::NoSuchKey => e
+            false
+        end
     end
 end
 
@@ -56,9 +92,9 @@ end
 
 class MiniCloudinary
 
-    #def initialize()
-    #    @s3_bucket_service = S3BucketService.new("mini-cloudinary", "us-east-1")
-    #end
+    def initialize()
+        @storage_service = StorageService.new("mini-cloudinary", "us-east-1")
+    end
 
     def resize_with_background(image:, width:, height:, extent_width: width, extent_height: height, background: "black")
         image.combine_options do |c|
@@ -71,9 +107,8 @@ class MiniCloudinary
 
     def resize_image(path, output_path, width, height)
         begin
-            if s3_bucket_service.file_exists?()
-                #return the file from s3
-            else
+            file = @storage_service.get_file(output_path)
+            if file.nil?
                 image = MiniMagick::Image.open(path)
                 if width > image.width && height > image.height
                     resize_with_background(image: image, width: image.width, height: image.height, extent_width: width, extent_height: height)
@@ -84,8 +119,9 @@ class MiniCloudinary
                 else
                     image = image.resize("#{width}x#{height}")
                 end
+                # todo can skip writing to localpath?
                 image.write("#{output_path}")
-                @s3_bucket_service.upload(output_path, output_path)
+                @storage_service.upload( output_path)
             end
         rescue MiniMagick::Invalid => e
             raise IOError.new("URL not found or not an image")
