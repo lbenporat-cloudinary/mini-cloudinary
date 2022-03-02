@@ -128,7 +128,7 @@ RSpec.describe App do
         it "checks that random pixel is the same as the original " do
             original_image = MiniMagick::Image.open(original_image_path)
             output_path = app.transform(original_image_path, original_image.width, original_image.height)
-            transformed_image = MiniMagick::Image.open(output_path)
+            transformed_image = MiniMagick::Image.read(output_path)
 
             x_pixel = rand(transformed_image.get_pixels.size)
             y_pixel = rand(transformed_image.get_pixels.size)
@@ -143,7 +143,7 @@ RSpec.describe App do
         it "checks that topmost left pixel is the same as the original" do  
             original_image = MiniMagick::Image.open(original_image_path)
             output_path = app.transform(original_image_path, 200, 134)
-            transformed_image = MiniMagick::Image.open(output_path)
+            transformed_image = MiniMagick::Image.read(output_path)
 
             transform_mse = calculate_mse(transformed_image.get_pixels[0][0])
             original_mse = calculate_mse(original_image.get_pixels[0][0])
@@ -154,7 +154,7 @@ RSpec.describe App do
         it "check that top right pixel is the same as the original" do
             original_image = MiniMagick::Image.open(original_image_path)
             output_path = app.transform(original_image_path, 200, 134)
-            transformed_image = MiniMagick::Image.open(output_path)
+            transformed_image = MiniMagick::Image.read(output_path)
 
             transform_mse = calculate_mse(transformed_image.get_pixels[0][transformed_image.get_pixels[0].size - 1])
             original_mse = calculate_mse(original_image.get_pixels[0][original_image.get_pixels[0].size - 1])
@@ -165,7 +165,7 @@ RSpec.describe App do
         context "when dimensions are bigger than original" do
             it "checks that topmost left pixel is black" do
                 output_path = app.transform(original_image_path, 1000, 1000)
-                transformed_image = MiniMagick::Image.open(output_path)
+                transformed_image = MiniMagick::Image.read(output_path)
     
                 expect(transformed_image.get_pixels[0][0]).to eq [0,0,0]
             end            
@@ -175,7 +175,7 @@ RSpec.describe App do
             it "check that top center pixel is not black on bigger width" do
                 original_image = MiniMagick::Image.open(original_image_path)
                 output_path = app.transform(original_image_path, 1000, original_image.height)
-                transformed_image = MiniMagick::Image.open(output_path)
+                transformed_image = MiniMagick::Image.read(output_path)
 
                 expect(transformed_image.get_pixels[0][500]).not_to eq [0,0,0]
             end
@@ -183,7 +183,7 @@ RSpec.describe App do
             it "check that left center pixel is black on bigger width" do
                 original_image = MiniMagick::Image.open(original_image_path)
                 output_path = app.transform(original_image_path, 1000, original_image.height)
-                transformed_image = MiniMagick::Image.open(output_path)
+                transformed_image = MiniMagick::Image.read(output_path)
 
                 expect(transformed_image.get_pixels[(original_image.height / 2).floor][0]).to eq [0,0,0]
             end
@@ -191,7 +191,7 @@ RSpec.describe App do
             it "check that top center pixel is black on bigger height" do
                 original_image = MiniMagick::Image.open(original_image_path)
                 output_path = app.transform(original_image_path, original_image.width, 1000)
-                transformed_image = MiniMagick::Image.open(output_path)
+                transformed_image = MiniMagick::Image.read(output_path)
 
                 expect(transformed_image.get_pixels[0][(original_image.width / 2).floor]).to eq [0,0,0]
             end
@@ -199,7 +199,7 @@ RSpec.describe App do
             it "check that left center pixel is not black on bigger height" do
                 original_image = MiniMagick::Image.open(original_image_path)
                 output_path = app.transform(original_image_path, original_image.width, 1000)
-                transformed_image = MiniMagick::Image.open(output_path)
+                transformed_image = MiniMagick::Image.read(output_path)
 
                 expect(transformed_image.get_pixels[(transformed_image.height / 2).floor][0]).not_to eq [0,0,0]
             end

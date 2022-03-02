@@ -18,15 +18,15 @@ class StorageService
     def get_file(filename)
         evict_old_files
         if File.file?(filename) || get_from_s3(filename)
-            filename
+            key_value_pair = @latest_files.find { |pair| pair[filename].nil? == false}
+            key_value_pair[filename]
         else
             nil
         end
     end
 
     def upload(image, filename)
-        image.write("#{filename}")
-        @latest_files << filename
+        @latest_files << { filename => image }
         evict_old_files
         response = @s3_client.put_object(
             bucket: @bucket_name,
@@ -44,9 +44,7 @@ class StorageService
 
     def evict_old_files
         while @latest_files.size >= MAX_LOCAL_FILES
-            removed_file = @latest_files.shift()
-            upload(MiniMagick::Image.open(removed_file), removed_file)
-            File.delete(removed_file)
+            @latest_files.shift()
         end
     end
 
@@ -58,7 +56,8 @@ class StorageService
                 key: filename
             )
             if response.etag
-                @latest_files << filename
+                @latest_files << { filename => MiniMagick::Image.open(filename) }
+                File.delete(filename)
                 true
             else
                 false
@@ -105,8 +104,8 @@ class MiniCloudinary
 
     def resize_image(path, filename, width, height)
         begin
-            file = @storage_service.get_file(filename)
-            if file.nil?
+            image = @storage_service.get_file(filename)
+            if image.nil?
                 image = MiniMagick::Image.open(path)
                 if width > image.width && height > image.height
                     resize_with_background(image: image, width: image.width, height: image.height, extent_width: width, extent_height: height)
@@ -119,6 +118,7 @@ class MiniCloudinary
                 end
                 @storage_service.upload(image, filename)
             end
+            image
         rescue MiniMagick::Invalid => e
             raise IOError.new("URL not found or not an image")
         rescue OpenURI::HTTPError => e
@@ -138,8 +138,8 @@ class MiniCloudinary
         else
             normalized_filename = url.strip.gsub(/[^0-9A-Za-z.\-]/, '_')
             local_path = "#{File.basename(normalized_filename)}_width=#{width}_height=#{height}.jpeg"
-            resize_image(url, local_path, width.to_i, height.to_i)
-            local_path
+            image = resize_image(url, local_path, width.to_i, height.to_i)
+            image.to_blob
         end
     end
 end
@@ -161,7 +161,8 @@ class App < Sinatra::Base
         height = params['height']
 
         begin
-            send_file(mc.transform(url, width, height))
+            content_type("image/jpeg")
+            mc.transform(url, width, height)
         rescue IOError => e
             build_error_array(BAD_REQUEST, e.message)
         rescue ArgumentError => e
