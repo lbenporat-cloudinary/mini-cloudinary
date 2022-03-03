@@ -16,56 +16,57 @@ module ErrorHandler
         }
         JSON[json]
     end
+
+    def build_error_array(code, message)
+        [code, parse_error_to_json(code, message)]
+    end
 end
 
 class MiniCloudinary
 
-    include ErrorHandler
-
-    def initialize(path)
-        @local_path = path
-    end
-
-    def image_doesnt_exist?(url)
-        
-        uri = URI.parse(url)
-        request = Net::HTTP.new(uri.host, uri.port)
-        request.use_ssl = (uri.scheme == 'https')
-        response = request.request_head(uri.path)
-        response.code.to_i != STATUS_OK
+    def resize_with_background(image:, width:, height:, extent_width: width, extent_height: height, background: "black")
+        image.combine_options do |c|
+            c.resize("#{width}x#{height}")
+            c.extent("#{extent_width}x#{extent_height}")
+            c.background(background)
+            c.gravity("center")
+        end
     end
 
     def resize_image(path, output_path, width, height)
-        
-        image = MiniMagick::Image.open(path)
-        if width > image.width && height > image.height
-            image.combine_options do |c|
-                c.extent("#{width}x#{height}")
-                c.background("black")
-                c.gravity("center")
+        begin
+            image = MiniMagick::Image.open(path)
+            if width > image.width && height > image.height
+                resize_with_background(image: image, width: image.width, height: image.height, extent_width: width, extent_height: height)
+            elsif width > image.width
+                resize_with_background(image: image, width: image.width, height: height, extent_width: width)
+            elsif height > image.height
+                resize_with_background(image: image, width: width, height: image.height, extent_height: height)
+            else
+                image = image.resize("#{width}x#{height}")
             end
-        elsif width > image.width || height > image.height
-            image = image.resize("#{width}x#{height}")
-            image.combine_options do |c|
-                c.extent("#{width}x#{height}")
-                c.background("black")
-                c.gravity("center")
-            end
-        else
-            image = image.resize("#{width}x#{height}")
+            image.write("#{output_path}")
+        rescue MiniMagick::Invalid => e
+            raise IOError.new("URL not found or not an image")
+        rescue OpenURI::HTTPError => e
+            raise IOError.new("URL not found or not an image")
+        rescue OpenSSL::SSL::SSLError => e
+            raise IOError.new("Failed to open ssl connection")
+        rescue SocketError => e
+            raise IOError.new("Could not open connection to #{path}")
         end
-        image.write("#{output_path}")
     end
 
-    def handle_request(url, width, height)
-    
-        if url.nil? || image_doesnt_exist?(url) # todo check that it is actually and image!
-            [BAD_REQUEST, parse_error_to_json(BAD_REQUEST, "url not found or not an image")]
-        elsif width.nil? || height.nil? || width.to_i <= 0 || height.to_i <= 0
-            [BAD_REQUEST, parse_error_to_json(BAD_REQUEST, "Invalid params")]
+    def transform(url, width, height)
+        if url.nil? || width.nil? || height.nil?
+            raise ArgumentError.new("Arguments cannot be nil, got: url=#{url}, width=#{width}, height=#{height}")
+        elsif width.to_i <= 0 || height.to_i <= 0
+            raise ArgumentError.new("Width and height must be positive integers, got: width=#{width}, height=#{height}")
         else
-            resize_image(url, @local_path, width.to_i, height.to_i)
-            @local_path
+            normalized_filename = url.strip.gsub(/[^0-9A-Za-z.\-]/, '_')
+            local_path = "#{File.basename(normalized_filename)}_width=#{width}_height=#{height}.jpeg"
+            resize_image(url, local_path, width.to_i, height.to_i)
+            local_path
         end
     end
 end
@@ -74,8 +75,7 @@ class App < Sinatra::Base
 
     include ErrorHandler
 
-    file_path = "output.jpeg"
-    mc = MiniCloudinary.new(file_path)
+    mc = MiniCloudinary.new
 
     error STATUS_NOT_FOUND do
         parse_error_to_json(STATUS_NOT_FOUND, "Sorry, this page doesn't exist")
@@ -87,11 +87,12 @@ class App < Sinatra::Base
         width = params['width']
         height = params['height']
 
-        ret_value = mc.handle_request(url, width, height)
-        if ret_value.is_a?(String)
-            send_file(file_path) 
-        else
-            ret_value
+        begin
+            send_file(mc.transform(url, width, height))
+        rescue IOError => e
+            build_error_array(BAD_REQUEST, e.message)
+        rescue ArgumentError => e
+            build_error_array(BAD_REQUEST, e.message)
         end
     end 
 
