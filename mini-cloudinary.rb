@@ -10,14 +10,18 @@ class StorageService
 
   def initialize(bucket_name, region)
     @latest_files = []
-    @s3_client = Aws::S3::Client.new(region: region)
+    @s3_client = Aws::S3::Client.new(endpoint: "http://192.168.1.29:9000",
+      access_key_id: 'minioadmin',
+      secret_access_key: 'minioadmin',
+      force_path_style: true,
+      region: region)
     @bucket_name = bucket_name
-    response = @s3_client.list_buckets
-    @s3_client.create_bucket(bucket: @bucket_name) unless response.include?(@bucket_name)
+    @s3_client.create_bucket(bucket: @bucket_name) unless bucket_exists?
   end
 
-  def get_file(filename)
+  def get_image(filename)
     evict_old_files
+    # todo fix bug: check if it is in memory and not in local system!
     if File.file?(filename) || get_from_s3(filename)
       key_value_pair = @latest_files.find { |pair| pair[filename].nil? == false }
       key_value_pair[filename]
@@ -61,6 +65,15 @@ private
       false
     end
   end
+
+#can improve?
+  def bucket_exists?
+    response = @s3_client.list_buckets
+    response.buckets.each do |bucket|
+       return true if bucket.name == @bucket_name
+    end
+    false
+  end
 end
 
 module ErrorHandler
@@ -96,32 +109,17 @@ class MiniCloudinary
     end
   end
 
-  def resize_image(path, filename, width, height)
-    begin
-      image = @storage_service.get_file(filename)
-      if image.nil?
-        image = MiniMagick::Image.open(path)
-        if width > image.width && height > image.height
-          resize_with_background(image: image, width: image.width, height: image.height, extent_width: width, extent_height: height)
-        elsif width > image.width
-          resize_with_background(image: image, width: image.width, height: height, extent_width: width)
-        elsif height > image.height
-          resize_with_background(image: image, width: width, height: image.height, extent_height: height)
-        else
-          image = image.resize("#{width}x#{height}")
-        end
-        @storage_service.upload(image, filename)
-      end
-      image
-    rescue MiniMagick::Invalid
-      raise IOError.new('URL not found or not an image')
-    rescue OpenURI::HTTPError
-      raise IOError.new('URL not found or not an image')
-    rescue OpenSSL::SSL::SSLError
-      raise IOError.new('Failed to open ssl connection')
-    rescue SocketError
-      raise IOError.new("Could not open connection to #{path}")
+  def resize_image(image, width, height)
+    if width > image.width && height > image.height
+      resize_with_background(image: image, width: image.width, height: image.height, extent_width: width, extent_height: height)
+    elsif width > image.width
+      resize_with_background(image: image, width: image.width, height: height, extent_width: width)
+    elsif height > image.height
+      resize_with_background(image: image, width: width, height: image.height, extent_height: height)
+    else
+      image = image.resize("#{width}x#{height}")
     end
+    image
   end
 
   def transform(url, width, height)
@@ -129,12 +127,33 @@ class MiniCloudinary
       raise ArgumentError.new("Arguments cannot be nil, got: url=#{url}, width=#{width}, height=#{height}")
     elsif width.to_i <= 0 || height.to_i <= 0
       raise ArgumentError.new("Width and height must be positive integers, got: width=#{width}, height=#{height}")
-    else
-      normalized_filename = url.strip.gsub(/[^0-9A-Za-z.\-]/, '_')
-      local_path = "#{File.basename(normalized_filename)}_width=#{width}_height=#{height}.jpeg"
-      image = resize_image(url, local_path, width.to_i, height.to_i)
-      image.to_blob
     end
+
+    normalized_filename = url.strip.gsub(/[^0-9A-Za-z.\-]/, '_')
+    filename = "#{File.basename(normalized_filename)}_width=#{width}_height=#{height}.jpeg"
+    
+    image = @storage_service.get_image(filename)
+    if image.nil?
+      image = create_new_transformation(url, filename, width, height)
+    end
+    image.to_blob
+  end
+
+  def create_new_transformation(url, filename, width, height)
+    begin
+      image = MiniMagick::Image.open(url)
+      image = resize_image(image, width.to_i, height.to_i)
+      @storage_service.upload(image, filename)
+    rescue MiniMagick::Invalid
+      raise IOError.new('URL not found or not an image')
+    rescue OpenURI::HTTPError
+      raise IOError.new('URL not found or not an image')
+    rescue OpenSSL::SSL::SSLError
+      raise IOError.new('Failed to open ssl connection')
+    rescue SocketError
+      raise IOError.new("Could not open connection to #{url}")
+    end
+    image
   end
 end
 
