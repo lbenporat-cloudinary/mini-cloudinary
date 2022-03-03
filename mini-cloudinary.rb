@@ -21,11 +21,14 @@ class StorageService
 
   def get_image(filename)
     evict_old_files
-    # todo fix bug: check if it is in memory and not in local system!
-    if File.file?(filename) || get_from_s3(filename)
+    key_value_pair = @latest_files.find { |pair| pair[filename].nil? == false }
+    if key_value_pair.nil?
+      get_from_s3(filename)
       key_value_pair = @latest_files.find { |pair| pair[filename].nil? == false }
-      key_value_pair[filename]
     end
+
+    # still nil, couldn't get it from s3 as well...
+    key_value_pair.nil? ? nil : key_value_pair[filename]
   end
 
   def upload(image, filename)
@@ -66,7 +69,6 @@ private
     end
   end
 
-#can improve?
   def bucket_exists?
     response = @s3_client.list_buckets
     response.buckets.each do |bucket|
